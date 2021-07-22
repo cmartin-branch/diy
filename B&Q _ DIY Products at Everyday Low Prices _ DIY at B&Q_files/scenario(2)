@@ -1,0 +1,132 @@
+window.DigitalFeedback['https://digitalfeedback.euro.confirmit.com/api/digitalfeedback/loader/prod/scenario?programKey=lzpuGS&scenarioId=171&programVersion=463'] = function (api) {
+window.confirmitCookies = { set: function (b, c, a) { b = [encodeURIComponent(b) + "=" + encodeURIComponent(c)]; a && ("expiry" in a && ("number" == typeof a.expiry && (a.expiry = new Date(1E3 * a.expiry + +new Date)), b.push("expires=" + a.expiry.toGMTString())), "domain" in a && b.push("domain=" + a.domain), "path" in a && b.push("path=" + a.path), "secure" in a && a.secure && b.push("secure")); document.cookie = b.join("; ") }, get: function (b, c) { for (var a = [], e = document.cookie.split(/; */), d = 0; d < e.length; d++) { var f = e[d].split("="); f[0] == encodeURIComponent(b) && a.push(decodeURIComponent(f[1].replace(/\+/g, "%20"))) } return c ? a : a[0] }, clear: function (b, c) { c || (c = {}); c.expiry = -86400; this.set(b, "", c) } };
+window.confirmitWatchUrlChange = function (callback, pollInterval = 100) {
+    var loc = window.location.href, timer;
+    var check = function () {
+        timer && clearTimeout(timer);
+        if (window.location.href !== loc) {
+            loc = window.location.href;
+            callback(loc);
+        }
+        timer = setTimeout(check, pollInterval);
+    };
+    check();
+};
+
+/*
+ *Name: Confirmit Site Survey CS Integration
+ *Version: 1.4
+ */
+
+if (typeof CustomEvent != "function") {
+    function CustomEvent(event, params) {
+        params = params || {
+            bubbles: false,
+            cancelable: false,
+            detail: undefined,
+        };
+        var evt = document.createEvent("CustomEvent");
+        evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+        return evt;
+    }
+    CustomEvent.prototype = window.Event.prototype;
+    window.CustomEvent = CustomEvent;
+}
+
+function csIntegrationEventDispatcher(state, surveyId, data) {
+    var evt = new CustomEvent("Contentsquare_CF_Integration_Data", {
+        detail: {
+            state: state,
+            surveyId: surveyId,
+            data: data,
+        },
+    });
+    window.dispatchEvent(evt);
+}
+
+function csIntegrationEventHandler(state, surveyId, data) {
+    if (window.CustomEvent) {
+        if (state === "invitation_shown") {
+            var tempEvent = state;
+            var tempsurveyId = surveyId;
+            var tempData = "";
+
+            window.addEventListener(
+                "Contentsquare_CF_Integration_Ready",
+                function () {
+                    csIntegrationEventDispatcher(tempEvent, tempsurveyId, tempData);
+                },
+                false
+            );
+        }
+        csIntegrationEventDispatcher(state, surveyId, data);
+    }
+}
+
+var ctx = api();
+var replayLink = null;
+window.addEventListener(
+    "Contentsquare_CF_Integration_ReplayLink",
+    function (e) {
+        if (e && e.detail && e.detail.replayLink) {
+            replayLink = e.detail.replayLink;
+        }
+    },
+    false
+);
+
+var evt = new Event("Contentsquare_CF_Integration_Launch");
+window.dispatchEvent(evt);
+//Confirmit Site Survey CS Integration End
+
+
+window.addEventListener("Contentsquare_CF_Integration_Data", function (e) {
+    console.log(JSON.stringify(e.detail));
+});
+
+window.launchFeedback = function (invite, container, surveyId, data) {
+    function createHandler(code) {
+        return function () {
+            csIntegrationEventHandler(code, surveyId, null);
+        }
+    }
+
+    ctx.events.showInvite.on(createHandler("invitation_shown"));
+    ctx.events.acceptInvite.on(function () {
+        csIntegrationEventHandler("invitation_accepted", surveyId, null);
+    });
+    ctx.events.declineInvite.on(createHandler("invitation_declined"));
+    ctx.events.closeInvite.on(createHandler("invitation_closed"));
+    ctx.events.showContainer.on(function (e) {
+        const surveyOrigin = new URL(e.surveyUrl).origin;
+        const messageHandler = function (e) {
+            if (event.origin !== surveyOrigin || (e.data.type && e.data.type.startsWith("cf-")))
+                return;
+            csIntegrationEventHandler("survey_keymetric", surveyId, e.data);
+        };
+        window.addEventListener("message", messageHandler);
+
+        ctx.events.closeContainer.on(function () {
+            window.removeEventListener("message", messageHandler);
+            csIntegrationEventHandler("container_closed", surveyId, null);
+        });
+        ctx.events.completeSurvey.on(function () {
+            window.removeEventListener("message", messageHandler);
+            csIntegrationEventHandler("survey_completed", surveyId, null);
+        });
+
+        csIntegrationEventHandler("survey_shown", surveyId, null);
+    });
+
+    data = data || {};
+    if (replayLink)
+        data.replayLink = replayLink;
+
+    ctx.invite(invite)
+        .container(container)
+        .survey(surveyId)
+        .data(data)
+        .show();
+}
+
+};
